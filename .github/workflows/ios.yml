@@ -31,8 +31,8 @@ jobs:
           xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build/device CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO | tee build/release/device-build.log
           mkdir -p build/release/Payload
           ditto build/device/Build/Products/Release-iphoneos/App.app build/release/Payload/App.app
+          python3 build_ipa.py
           cd build/release
-          zip -qr Nuonuo-unsigned.ipa Payload
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' Payload/App.app/Info.plist > bundle-id.txt
           /usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' Payload/App.app/Info.plist > minimum-ios.txt
           lipo -info Payload/App.app/App > architectures.txt
@@ -75,5 +75,6 @@ jobs:
             native/package-lock.json
             native/capacitor.config.json
             native/app-icon.png
+            native/build_ipa.py
           retention-days: 30
           if-no-files-found: warn
