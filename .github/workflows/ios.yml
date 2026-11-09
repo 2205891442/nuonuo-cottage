@@ -1,0 +1,79 @@
+name: Build Nuonuo for iPhone
+on:
+  push:
+    branches: [main]
+    paths: ['native/**', 'docs/**', '.github/workflows/ios.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  ios:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install fixed Capacitor packages and create Xcode project
+        working-directory: native
+        run: |
+          npm install --no-audit --no-fund
+          npx cap add ios
+          npx cap sync ios
+          cp app-icon.png ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png
+          xcodebuild -version
+      - name: Build unsigned arm64 iPhone app
+        working-directory: native
+        run: |
+          mkdir -p build/release
+          set -o pipefail
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build/device CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO | tee build/release/device-build.log
+          mkdir -p build/release/Payload
+          ditto build/device/Build/Products/Release-iphoneos/App.app build/release/Payload/App.app
+          cd build/release
+          zip -qr Nuonuo-unsigned.ipa Payload
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' Payload/App.app/Info.plist > bundle-id.txt
+          /usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' Payload/App.app/Info.plist > minimum-ios.txt
+          lipo -info Payload/App.app/App > architectures.txt
+          codesign -dv Payload/App.app > signature.txt 2>&1 || true
+      - name: Build and launch in iOS simulator
+        working-directory: native
+        run: |
+          DEVICE_ID=$(xcrun simctl list devices available --json | python3 -c 'import sys,json; data=json.load(sys.stdin); devices=[d for k,v in data["devices"].items() if "iOS" in k for d in v if d.get("isAvailable") and "iPhone" in d["name"]]; print(devices[0]["udid"])')
+          xcrun simctl boot "$DEVICE_ID" || true
+          xcrun simctl bootstatus "$DEVICE_ID" -b
+          set -o pipefail
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug -sdk iphonesimulator -destination "id=$DEVICE_ID" -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=NO | tee build/release/simulator-build.log
+          xcrun simctl install "$DEVICE_ID" build/simulator/Build/Products/Debug-iphonesimulator/App.app
+          xcrun simctl launch "$DEVICE_ID" com.nuonuo.cottage
+          sleep 10
+          xcrun simctl io "$DEVICE_ID" screenshot build/release/ios-simulator.png
+          ditto -c -k --sequesterRsrc --keepParent build/simulator/Build/Products/Debug-iphonesimulator/App.app build/release/Nuonuo-simulator.zip
+      - name: Upload unsigned IPA and build evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuonuo-ios-unsigned
+          path: |
+            native/build/release/Nuonuo-unsigned.ipa
+            native/build/release/ios-simulator.png
+            native/build/release/Nuonuo-simulator.zip
+            native/build/release/*.txt
+            native/build/release/*.log
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Upload generated Xcode source
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuonuo-ios-xcode-source
+          path: |
+            native/ios
+            native/www
+            native/package.json
+            native/package-lock.json
+            native/capacitor.config.json
+            native/app-icon.png
+          retention-days: 30
+          if-no-files-found: warn

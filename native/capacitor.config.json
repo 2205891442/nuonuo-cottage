@@ -1,0 +1,10 @@
+{
+  "appId": "com.nuonuo.cottage",
+  "appName": "糯糯小屋",
+  "webDir": "www",
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#fbf8f1",
+    "allowsLinkPreview": false
+  }
+}

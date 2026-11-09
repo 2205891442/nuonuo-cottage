@@ -1,0 +1,17 @@
+{
+  "id": "./1109_糯糯小屋_v1.html",
+  "name": "糯糯小屋 · 漫游手记",
+  "short_name": "糯糯小屋",
+  "lang": "zh-CN",
+  "description": "六段漫游、找不同、风景拼图和翻牌，每天收藏一点小欢喜。",
+  "start_url": "./1109_糯糯小屋_v1.html#home",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#fbf8f1",
+  "theme_color": "#fbf8f1",
+  "icons": [
+    {"src":"1109_小屋图标_v1.svg","sizes":"any","type":"image/svg+xml","purpose":"any"},
+    {"src":"1109_苹果图标_v1.png","sizes":"180x180","type":"image/png","purpose":"any"},
+    {"src":"1109_安装图标_v1.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}
+  ]
+}
