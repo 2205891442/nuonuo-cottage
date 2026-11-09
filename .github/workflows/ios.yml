@@ -28,7 +28,7 @@ jobs:
         run: |
           mkdir -p build/release
           set -o pipefail
-          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build/device CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO | tee build/release/device-build.log
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build/device IPHONEOS_DEPLOYMENT_TARGET=15.4 CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO | tee build/release/device-build.log
           mkdir -p build/release/Payload
           ditto build/device/Build/Products/Release-iphoneos/App.app build/release/Payload/App.app
           python3 build_ipa.py
@@ -44,7 +44,7 @@ jobs:
           xcrun simctl boot "$DEVICE_ID" || true
           xcrun simctl bootstatus "$DEVICE_ID" -b
           set -o pipefail
-          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug -sdk iphonesimulator -destination "id=$DEVICE_ID" -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=NO | tee build/release/simulator-build.log
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug -sdk iphonesimulator -destination "id=$DEVICE_ID" -derivedDataPath build/simulator IPHONEOS_DEPLOYMENT_TARGET=15.4 CODE_SIGNING_ALLOWED=NO | tee build/release/simulator-build.log
           xcrun simctl install "$DEVICE_ID" build/simulator/Build/Products/Debug-iphonesimulator/App.app
           xcrun simctl launch "$DEVICE_ID" com.nuonuo.cottage
           sleep 10
