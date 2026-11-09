@@ -1,4 +1,4 @@
-const KINDS=['difference','memory','puzzle'];
+const KINDS=['difference','memory','puzzle','pancake'];
 const DIFFICULTIES=['medium','hard','expert'];
 const MODES=['free','journey','daily'];
 const CHAPTER_NAMES=['奶油咖啡街','松鼠杂货铺','森林周末集','月光小书屋','桃子甜点工坊','海风花园'];
@@ -23,7 +23,7 @@ function completedChapter(levels,index) {
   return Array.from({length:5},(_,i)=>levels[String(index*5+i)]).every(Boolean);
 }
 const uniqueValid=(input,check)=>Array.isArray(input)?[...new Set(input.filter(check))]:[];
-const emptyDay=()=>({difference:0,memory:0,puzzle:0,rounds:0});
+const emptyDay=()=>({difference:0,memory:0,puzzle:0,pancake:0,rounds:0});
 
 export function createJournal() {
   return {version:1,levels:{},daily:{},events:[],claimedQuests:[],dailyWins:[],postcards:[]};
@@ -42,7 +42,7 @@ export function normalizeJournal(input,legacyLevelDone=[]) {
     if(!validDate(date)||!record(value)) continue;
     const day=emptyDay();
     for(const kind of KINDS) if(count(value[kind])&&value[kind]<=10000000) day[kind]=value[kind];
-    day.rounds=day.difference+day.memory+day.puzzle;
+    day.rounds=day.difference+day.memory+day.puzzle+day.pancake;
     result.daily[date]=day;
   }
   result.events=uniqueValid(source.events,eventId);

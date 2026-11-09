@@ -5,14 +5,16 @@ import {mountViewer} from './1109_看图交互_v2.mjs';
 import {createStore} from './1109_存档协调_v2.mjs';
 import {awardPlay,dailyChallenge,questStatus,claimQuest,chapterProgress,makePuzzle,swapPuzzle,isPuzzleSolved} from './1109_成长规则_v3.mjs';
 import {homeView,gamesView,journeyView,dailyView,collectionView,puzzleMenuView,puzzleView,postcardContent,stamps,cardArt} from './1109_游玩界面_v3.mjs';
+import {createPancakeController} from './1109_煎饼交互_v4.mjs';
 
 const KEY='nuonuo-cottage-v1';
 const $=selector=>document.querySelector(selector);
 const esc=text=>String(text).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let state=createState(),storageOK=true,route='home',toastTimer,memoryTimer,hintTimer,hint=-1,shopGroup='wall',pendingImport=null;
 let viewer=null,camera={zoom:1,x:.5,y:.5},difficulty='hard',compareMode=false,swapped=false,hintStep=0,selectedHint=null;
+let pancakeController=null;
 let memoryFocus=null,selectedChapter=0,puzzleSize=3,puzzleLevel=0,puzzlePeek=false,puzzleNumbers=false,pendingWrites=0;
-const ROUTES=['home','games','calendar','difference','memory','memory-menu','journey','daily','collection','puzzle','puzzle-menu'];
+const ROUTES=['home','games','calendar','difference','memory','memory-menu','journey','daily','collection','puzzle','puzzle-menu','pancake-menu','pancake','pancake-book','pancake-stall','pancake-album'];
 const randomSeed=()=>globalThis.crypto?.getRandomValues(new Uint32Array(1))[0]??Math.floor(Math.random()*4294967296);
 const DIFFICULTIES={medium:{label:'细心 · 8 处',count:8},hard:{label:'困难 · 12 处',count:12},expert:{label:'专家 · 16 处',count:16}};
 const store=createStore({getItem:key=>window.localStorage.getItem(key),setItem:(key,value)=>window.localStorage.setItem(key,value)},KEY);
@@ -48,12 +50,18 @@ function toast(message) {
   clearTimeout(toastTimer);const notice=$('#toast');($('#sheet').open?$('#sheet'):$('.app-shell')).append(notice);notice.textContent=message;notice.classList.add('visible');
   toastTimer=setTimeout(()=>$('#toast').classList.remove('visible'),3000);
 }
-function sound(success=false) {
+function sound(success=false,action='') {
  if(!state.settings.sound)return;
  try {
   const Audio=window.AudioContext||window.webkitAudioContext;if(!Audio)return;
   audio ||= new Audio();audio.resume();
-  const notes=success?[523.25,659.25,783.99]:[659.25];
+  if(!success&&['spread','sauce','fold','pack','spread-help','sauce-help'].includes(action)){
+   const duration=action==='pack'?.18:.1,buffer=audio.createBuffer(1,Math.ceil(audio.sampleRate*duration),audio.sampleRate),data=buffer.getChannelData(0);
+   for(let i=0;i<data.length;i++)data[i]=(Math.random()*2-1)*(1-i/data.length);
+   const source=audio.createBufferSource(),filter=audio.createBiquadFilter(),gain=audio.createGain();source.buffer=buffer;filter.type='lowpass';filter.frequency.value=action==='pack'?1500:700;gain.gain.value=.16;source.connect(filter);filter.connect(gain);gain.connect(audio.destination);source.start();return;
+  }
+  const profiles={pour:[180,260,210],egg:[950,420],fill:[480,640],serve:[660,880]};
+  const notes=success?[523.25,659.25,783.99]:(profiles[action]||[659.25]);
   notes.forEach((frequency,i)=>{
    const oscillator=audio.createOscillator(),gain=audio.createGain(),time=audio.currentTime+i*.105;
    oscillator.type='sine';oscillator.frequency.value=frequency;gain.gain.setValueAtTime(.0001,time);gain.gain.exponentialRampToValueAtTime(.09,time+.015);gain.gain.exponentialRampToValueAtTime(.0001,time+.22);oscillator.connect(gain);gain.connect(audio.destination);oscillator.start(time);oscillator.stop(time+.24);
@@ -64,7 +72,7 @@ function renderHeader() {
  $('#brand-icon').innerHTML=bunnyBadge();
  $('#wallet').innerHTML=`${icon('star',16)}<span>${state.stars}</span>`;
  $('#settings').innerHTML=icon('settings',20);
- const tab=route==='calendar'?'daily':['memory','memory-menu','difference','games','puzzle','puzzle-menu'].includes(route)?'home':route;
+ const tab=route==='calendar'?'daily':['memory','memory-menu','difference','games','puzzle','puzzle-menu'].includes(route)||route.startsWith('pancake')?'home':route;
  $('#navigation').innerHTML=[['home','home','小屋'],['journey','leaf','探索'],['daily','calendar','每日'],['collection','heart','收藏']].map(([name,symbol,label])=>`<button class="nav-item ${tab===name?'active':''}" data-action="go" data-route="${name}" ${tab===name?'aria-current="page"':''}><span class="nav-icon">${icon(symbol,22)}</span><span>${label}</span></button>`).join('');
 }
 function go(next) {
@@ -72,6 +80,7 @@ function go(next) {
  else {route=next;render();window.scrollTo({top:0,behavior:'instant'});}
 }
 function openSheet(title,html,kicker='一点点小美好') {
+ if(route==='pancake')void pancakeController?.suspend();
  $('#sheet-title').textContent=title;$('#sheet-kicker').textContent=kicker;$('#sheet-content').innerHTML=html;
  if(!$('#sheet').open)$('#sheet').showModal();
  $('#sheet').scrollTop=0;
@@ -217,7 +226,7 @@ function renderCalendar() {
   const date=`${calendarYear}-${String(calendarMonth+1).padStart(2,'0')}-${String(n).padStart(2,'0')}`,done=!!state.days[date];
   cells+=`<span class="calendar-day ${done?'stamped':''} ${date===today()?'today':''} ${date>today()?'future':''}" aria-label="${date}${done?`，已打卡，完成 ${state.days[date].rounds} 局`:''}">${n}</span>`;
  }
- return `${warnings()}<div class="page-heading"><span class="eyebrow">那些被认真收藏的日子</span><h1>快乐，有迹可循。</h1><p>每一朵小花，都是你留给生活的温柔。</p></div><div class="stat-strip"><div class="stat"><strong>${totalDays()}</strong><small>累计陪伴 / 天</small></div><div class="stat"><strong>${streakOf(state.days)}</strong><small>连续打卡 / 天</small></div><div class="stat"><strong>${state.stats.memory+state.stats.difference+(state.stats.puzzle||0)}</strong><small>收获快乐 / 局</small></div></div><section class="calendar-card"><div class="month-heading">${button('month-prev',icon('back',17),'aria-label="上个月"','icon-button')}<h2>${calendarYear} 年 ${calendarMonth+1} 月</h2>${button('month-next',icon('next',17),'aria-label="下个月"','icon-button')}</div><div class="calendar-grid">${['日','一','二','三','四','五','六'].map(d=>`<span class="week-label">${d}</span>`).join('')}${cells}</div><div class="calendar-legend"><span class="legend-dot"></span>玩一局，就会长出一朵小花</div></section><div class="section-title"><h2>小小的陪伴纪念</h2><small>漏一天，也保留所有美好</small></div>${[[3,'🌱','初次发芽','连续 3 天 · 额外 10 星'],[7,'🌷','一周的小温柔','连续 7 天 · 额外 20 星'],[14,'🌼','开成一座小花园','连续 14 天 · 额外 40 星']].map(([days,emoji,title,detail])=>`<div class="milestone ${state.milestones.includes(days)?'done':''}"><span class="milestone-emoji">${emoji}</span><div><h3>${title}</h3><p>${detail}</p></div><span>${state.milestones.includes(days)?'已收藏':'慢慢来'}</span></div>`).join('')}<div class="row-spacer"></div>${button('go',state.days[today()]?'再玩一会也很好':'去玩一局，点亮今天','data-route="games"','button full secondary')}`;
+ return `${warnings()}<div class="page-heading"><span class="eyebrow">那些被认真收藏的日子</span><h1>快乐，有迹可循。</h1><p>每一朵小花，都是你留给生活的温柔。</p></div><div class="stat-strip"><div class="stat"><strong>${totalDays()}</strong><small>累计陪伴 / 天</small></div><div class="stat"><strong>${streakOf(state.days)}</strong><small>连续打卡 / 天</small></div><div class="stat"><strong>${state.stats.memory+state.stats.difference+(state.stats.puzzle||0)+(state.stats.pancake||0)}</strong><small>收获快乐 / 局</small></div></div><section class="calendar-card"><div class="month-heading">${button('month-prev',icon('back',17),'aria-label="上个月"','icon-button')}<h2>${calendarYear} 年 ${calendarMonth+1} 月</h2>${button('month-next',icon('next',17),'aria-label="下个月"','icon-button')}</div><div class="calendar-grid">${['日','一','二','三','四','五','六'].map(d=>`<span class="week-label">${d}</span>`).join('')}${cells}</div><div class="calendar-legend"><span class="legend-dot"></span>玩一局，就会长出一朵小花</div></section><div class="section-title"><h2>小小的陪伴纪念</h2><small>漏一天，也保留所有美好</small></div>${[[3,'🌱','初次发芽','连续 3 天 · 额外 10 星'],[7,'🌷','一周的小温柔','连续 7 天 · 额外 20 星'],[14,'🌼','开成一座小花园','连续 14 天 · 额外 40 星']].map(([days,emoji,title,detail])=>`<div class="milestone ${state.milestones.includes(days)?'done':''}"><span class="milestone-emoji">${emoji}</span><div><h3>${title}</h3><p>${detail}</p></div><span>${state.milestones.includes(days)?'已收藏':'慢慢来'}</span></div>`).join('')}<div class="row-spacer"></div>${button('go',state.days[today()]?'再玩一会也很好':'去玩一局，点亮今天','data-route="games"','button full secondary')}`;
 }
 function showShop(keepScroll=false) {
  const scroll=$('#sheet').scrollTop;
@@ -226,17 +235,19 @@ function showShop(keepScroll=false) {
  if(keepScroll)$('#sheet').scrollTop=scroll;
 }
 function showSettings() {
- openSheet('小屋里的小设置',`<div class="settings-row"><div><h3>软软的游戏音效</h3><p>只在点击和完成时响起，默认安静陪伴。</p></div><button class="toggle ${state.settings.sound?'on':''}" data-action="toggle-sound" role="switch" aria-checked="${state.settings.sound}" aria-label="游戏音效"></button></div><div class="settings-row"><div><h3>听一听</h3><p>试听通关的小旋律。</p></div>${button('test-sound',icon('sound',20),'aria-label="试听音效"','icon-button')}</div><div class="help-box"><strong>把小屋放到 iPhone 主屏幕</strong>用 Safari 打开小屋网址 → 点分享按钮 → 选择「添加到主屏幕」。下次点小兔图标，就能回来啦。<br>已经打开过的小游戏，会自动缓存以便离线玩。</div><span class="field-label">保存你的快乐</span><p style="font-size:11px;color:#929781;line-height:1.8;margin-top:8px">进度保存在当前浏览器。换设备或清理浏览器前，记得带走一份备份。</p><div class="button-row">${button('export',icon('download',17)+' 导出备份','','button secondary')}${button('import','恢复备份','','button soft')}</div><div class="help-box"><strong>星星是怎么来的？</strong>欢迎礼 30 星。每天首次通关打卡得 20 星，前 3 局各得 5 星。连续打卡还有小礼物。<br>漏签保留余额、装饰和累计记录，可以从新的一天继续。</div><p class="settings-foot">糯糯小屋 · 耐玩精修版 v3<br>六段漫游，三种小游戏，慢慢收藏小美好。</p>`,'把陪伴调成你喜欢的样子');
+ openSheet('小屋里的小设置',`<div class="settings-row"><div><h3>软软的游戏音效</h3><p>只在点击和完成时响起，默认安静陪伴。</p></div><button class="toggle ${state.settings.sound?'on':''}" data-action="toggle-sound" role="switch" aria-checked="${state.settings.sound}" aria-label="游戏音效"></button></div><div class="settings-row"><div><h3>听一听</h3><p>试听通关的小旋律。</p></div>${button('test-sound',icon('sound',20),'aria-label="试听音效"','icon-button')}</div><div class="help-box"><strong>把小屋放到 iPhone 主屏幕</strong>用 Safari 打开小屋网址 → 点分享按钮 → 选择「添加到主屏幕」。下次点小兔图标，就能回来啦。<br>已经打开过的小游戏，会自动缓存以便离线玩。</div><span class="field-label">保存你的快乐</span><p style="font-size:11px;color:#929781;line-height:1.8;margin-top:8px">进度保存在当前浏览器。换设备或清理浏览器前，记得带走一份备份。</p><div class="button-row">${button('export',icon('download',17)+' 导出备份','','button secondary')}${button('import','恢复备份','','button soft')}</div><div class="help-box"><strong>星星是怎么来的？</strong>欢迎礼 30 星。每天首次通关打卡得 20 星，前 3 局各得 5 星。连续打卡还有小礼物。<br>漏签保留余额、装饰和累计记录，可以从新的一天继续。</div><p class="settings-foot">面面 · 煎饼小铺版 v4<br>六段漫游，四种小游戏，慢慢收藏小美好。</p>`,'把陪伴调成你喜欢的样子');
 }
 function exportSave() {
  const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),link=document.createElement('a');
- link.href=url;link.download=`${today().replaceAll('-','')}_糯糯小屋备份_v1.json`;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),5000);toast('备份已准备好，请保存到文件');
+ link.href=url;link.download=`${today().replaceAll('-','')}_面面备份_v1.json`;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),5000);toast('备份已准备好，请保存到文件');
 }
 function render() {
  viewer?.destroy();viewer=null;
+ pancakeController?.detach();
  renderHeader();
   const views={home:renderHome,games:renderGames,calendar:renderCalendar,difference:renderDifference,'memory-menu':renderMemoryMenu,memory:renderMemory,journey:()=>journeyView(state,selectedChapter),daily:()=>dailyView(state),collection:()=>collectionView(state),'puzzle-menu':()=>puzzleMenuView(state,puzzleSize,puzzleLevel),puzzle:()=>state.activePuzzle?puzzleView(state,puzzlePeek,puzzleNumbers):puzzleMenuView(state,puzzleSize,puzzleLevel)};
- $('#content').innerHTML=(views[route]||renderHome)();
+ $('#content').innerHTML=route.startsWith('pancake')&&pancakeController?pancakeController.view(route):(views[route]||renderHome)();
+ pancakeController?.mount($('#content'),route);
  if(route==='difference'&&$('#detail-viewer'))viewer=mountViewer($('#detail-viewer'),{camera,onTap:hitDifference,onChange:value=>{camera=value;},onSwap:value=>{swapped=!!value;const control=$('[data-action="swap"]');if(control)control.textContent=`切换到 ${swapped?'A 原图':'B 变化图'}`;}});
 }
 function renderKeepScroll() {
@@ -266,7 +277,7 @@ document.addEventListener('click',async event=>{
  case 'collection-chapter':selectedChapter=Number(target.dataset.chapter);closeSheet();go('journey');break;
  case 'postcard':{
   const index=Number(target.dataset.chapter);if(!Number.isInteger(index)||!state.journal.postcards.includes(index))break;
-  openSheet('寄给你的一小片风景',postcardContent(index),'糯糯的漫游手记');break;
+  openSheet('寄给你的一小片风景',postcardContent(index),'面面的漫游手记');break;
  }
  case 'claim-quest':{
   const quest=questStatus(state,today()).find(q=>q.id===target.dataset.quest);if(!quest||quest.claimed)break;
@@ -322,11 +333,13 @@ $('#import-file').addEventListener('change',async event=>{
 $('#sheet').addEventListener('click',event=>{if(event.target===$('#sheet')){const r=$('#sheet').getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)closeSheet();}});
 window.addEventListener('hashchange',()=>{const requested=location.hash.slice(1);route=ROUTES.includes(requested)?requested:'home';render();window.scrollTo({top:0,behavior:'instant'});});
 function syncStored(){
- try{adoptState(store.read());if(state.activeMemory?.open.length===2)scheduleMemoryResolve(state.activeMemory.eventId);renderKeepScroll();if($('#sheet').open&&$('#sheet-title').textContent==='给小屋添点可爱')showShop(true);}catch{storageOK=false;}
+ try{const previous=state.activePancake;adoptState(store.read());if(state.activeMemory?.open.length===2)scheduleMemoryResolve(state.activeMemory.eventId);if(route==='pancake'&&pancakeController?.sync(previous))renderHeader();else renderKeepScroll();if($('#sheet').open&&$('#sheet-title').textContent==='给小屋添点可爱')showShop(true);}catch{storageOK=false;}
 }
 window.addEventListener('storage',event=>{if(event.key===KEY)syncStored();});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncStored();});
+pancakeController=createPancakeController({getState:()=>state,change,go,render,getRoute:()=>route,openSheet,toast,sound});
 route=ROUTES.includes(location.hash.slice(1))?location.hash.slice(1):'home';
+if(state.activePancake)await change(current=>{if(current.activePancake)current.activePancake={...current.activePancake,paused:true};return current;});
 if(state.activeMemory)await change(current=>{if(current.activeMemory){current.activeMemory=resolveCards(current.activeMemory);current.activeMemory.open=[];}return current;});
 render();
 if(state.activeMemory?.matched.length===state.activeMemory?.deck.length&&state.activeMemory)await finishRound('memory');

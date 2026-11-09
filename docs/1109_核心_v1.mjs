@@ -1,4 +1,5 @@
 import {createJournal,normalizeJournal} from './1109_成长规则_v3.mjs';
+import {createProgress,normalizeProgress,normalizeShift} from './1109_煎饼规则_v4.mjs';
 
 export const CATALOG = [
   {id:'wall-mint', group:'wall',name:'奶油绿墙纸',price:0,icon:'🌿',color:'#e7eee0'},
@@ -13,7 +14,7 @@ export const CATALOG = [
   {id:'plant-flower',group:'plant',name:'开花的好心情',price:15,icon:'🌼'},
   {id:'plant-cactus',group:'plant',name:'软软仙人掌',price:25,icon:'🌵'},
   {id:'plant-berry',group:'plant',name:'草莓小盆栽',price:35,icon:'🍓'},
-  {id:'friend-bunny',group:'friend',name:'糯糯小兔',price:0,icon:'🐰'},
+  {id:'friend-bunny',group:'friend',name:'面面小兔',price:0,icon:'🐰'},
   {id:'friend-cat',group:'friend',name:'奶油小猫',price:30,icon:'🐱'},
   {id:'friend-bear',group:'friend',name:'焦糖小熊',price:35,icon:'🐻'},
   {id:'friend-duck',group:'friend',name:'布丁小鸭',price:40,icon:'🐥'},
@@ -37,7 +38,7 @@ function validDate(date) {
 }
 function previousDay(date) { return new Date(Date.parse(date+'T00:00:00Z')-86400000).toISOString().slice(0,10); }
 export function createState() {
-  return {version:1,stars:30,days:{},owned:Object.values(DEFAULT_ROOM),room:{...DEFAULT_ROOM},milestones:[],settled:[],stats:{memory:0,difference:0,puzzle:0},levelDone:[],settings:{sound:false},activeMemory:null,activeDifference:null,activePuzzle:null,journal:createJournal()};
+  return {version:1,stars:30,days:{},owned:Object.values(DEFAULT_ROOM),room:{...DEFAULT_ROOM},milestones:[],settled:[],stats:{memory:0,difference:0,puzzle:0,pancake:0},levelDone:[],settings:{sound:false},activeMemory:null,activeDifference:null,activePuzzle:null,activePancake:null,pancake:createProgress(),journal:createJournal()};
 }
 export function streakOf(days,date = dayKey()) {
   let current = days[date] ? date : previousDay(date), count=0;
@@ -45,7 +46,7 @@ export function streakOf(days,date = dayKey()) {
   return count;
 }
 export function completeRound(state,eventId,kind,date = dayKey()) {
-  if(!validDate(date) || !['memory','difference','puzzle'].includes(kind) || typeof eventId !== 'string' || !eventId.trim() || eventId.length>100) throw new Error('这一局记录无效');
+  if(!validDate(date) || !['memory','difference','puzzle','pancake'].includes(kind) || typeof eventId !== 'string' || !eventId.trim() || eventId.length>100) throw new Error('这一局记录无效');
   if(state.settled.includes(eventId)) return {state,reward:0,checkedIn:false,milestone:0};
   const next=clone(state), checkedIn=!next.days[date];
   const day=next.days[date] || {rounds:0};
@@ -126,12 +127,14 @@ function normalizePuzzle(game) {
 export function normalizeState(input) {
   const base=createState();
   const state={...base,...clone(input)};
-  state.stats=Object.fromEntries(['memory','difference','puzzle'].map(kind=>[kind,nonnegativeInteger(state.stats?.[kind])&&state.stats[kind]<=10000000?state.stats[kind]:0]));
+  state.stats=Object.fromEntries(['memory','difference','puzzle','pancake'].map(kind=>[kind,nonnegativeInteger(state.stats?.[kind])&&state.stats[kind]<=10000000?state.stats[kind]:0]));
   state.journal=normalizeJournal(state.journal,state.levelDone);
   state.levelDone=[...new Set([...(Array.isArray(state.levelDone)?state.levelDone.filter(level=>Number.isInteger(level)&&level>=0&&level<30):[]),...Object.keys(state.journal.levels).map(Number)])];
   state.activeMemory=normalizeMemory(state.activeMemory);
   state.activeDifference=normalizeDifference(state.activeDifference);
   state.activePuzzle=normalizePuzzle(state.activePuzzle);
+  state.pancake=normalizeProgress(state.pancake);
+  state.activePancake=normalizeShift(state.activePancake);
   return state;
 }
 export function validateSave(text) {
@@ -152,8 +155,8 @@ export function validateSave(text) {
     if(!Array.isArray(data.levelDone)||data.levelDone.some(n=>!Number.isInteger(n)||n<0||n>=30)) throw new Error();
     if(!Array.isArray(data.milestones)||data.milestones.some(n=>![3,7,14].includes(n))) throw new Error();
     if(!data.stats||['memory','difference'].some(key=>!Number.isSafeInteger(data.stats[key])||data.stats[key]<0||data.stats[key]>10000000)) throw new Error();
-    if(data.stats.puzzle!==undefined&&(!Number.isSafeInteger(data.stats.puzzle)||data.stats.puzzle<0||data.stats.puzzle>10000000)) throw new Error();
-    const safe={version:1,stars:data.stars,days,owned:[...new Set(data.owned)],room:Object.fromEntries(Object.keys(DEFAULT_ROOM).map(k=>[k,data.room[k]])),settled:[...new Set(data.settled)],levelDone:[...new Set(data.levelDone)],milestones:[...new Set(data.milestones)],stats:{memory:data.stats.memory,difference:data.stats.difference,puzzle:data.stats.puzzle??0},settings:{sound:data.settings?.sound===true},activeMemory:data.activeMemory,activeDifference:data.activeDifference,activePuzzle:data.activePuzzle,journal:data.journal};
+    for(const kind of ['puzzle','pancake'])if(data.stats[kind]!==undefined&&(!Number.isSafeInteger(data.stats[kind])||data.stats[kind]<0||data.stats[kind]>10000000)) throw new Error();
+    const safe={version:1,stars:data.stars,days,owned:[...new Set(data.owned)],room:Object.fromEntries(Object.keys(DEFAULT_ROOM).map(k=>[k,data.room[k]])),settled:[...new Set(data.settled)],levelDone:[...new Set(data.levelDone)],milestones:[...new Set(data.milestones)],stats:{memory:data.stats.memory,difference:data.stats.difference,puzzle:data.stats.puzzle??0,pancake:data.stats.pancake??0},settings:{sound:data.settings?.sound===true},activeMemory:data.activeMemory,activeDifference:data.activeDifference,activePuzzle:data.activePuzzle,activePancake:data.activePancake,pancake:data.pancake,journal:data.journal};
     return normalizeState(safe);
-  } catch { throw new Error('备份文件不正确，请选择糯糯小屋导出的完整备份'); }
+  } catch { throw new Error('备份文件不正确，请选择面面导出的完整备份'); }
 }
